@@ -1,0 +1,86 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'CLUSTER_NAME', defaultValue: 'alti-chatbot-dev', description: 'The EKS cluster name')
+        string(name: 'REGION', defaultValue: 'us-east-1', description: 'The AWS region')
+        string(name: 'NAMESPACE', defaultValue: 'acc', description: 'The Kubernetes namespace to get pods from')
+    }
+
+    stages {
+        stage('Execute All Steps') {
+            steps {
+                // Use Jenkins credentials stored under ID 'aws-id'
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-id']]) {
+                    script {
+                        def clusterName = params.CLUSTER_NAME
+                        def region = params.REGION
+                        def namespace = params.NAMESPACE
+
+                        // Step 1: Download kubectl
+                        echo "Downloading kubectl version 1.20.5"
+                        sh """
+                            curl -LO "https://storage.googleapis.com/kubernetes-release/release/v1.20.5/bin/linux/amd64/kubectl"
+                            chmod u+x ./kubectl
+                        """
+
+                        // Verify kubectl installation
+                        sh "./kubectl version --client"
+
+                        // Step 2: Set up AWS EKS kubeconfig
+                        echo "Setting up kubeconfig for EKS cluster ${clusterName} in region ${region}"
+                        sh """
+                            aws eks update-kubeconfig --name ${clusterName} --region ${region}
+                        """
+
+                        // Step 3: Get pods from the specified namespace
+                        echo "Getting pods in namespace ${namespace}"
+                        sh """
+                            ./kubectl get pods -n ${namespace}
+                        """
+
+                        // Step 4: Install Python 3 and pip
+                        echo "Installing Python 3 and pip"
+                        sh """
+                            apt-get install -y python3
+                        """
+
+                        // Step 5: Set PATH for kubectl
+                        echo "Setting PATH for kubectl"
+                        sh """
+                            export PATH=$PATH:/root
+                        """
+
+                        // Step 6: Clean up any existing 'migrating' directory
+                        echo "Cleaning up any existing 'migrating' directory"
+                        sh """
+                            rm -rf migrating
+                        """
+
+                        // Step 7: Clone the repository
+                        echo "Cloning the repository https://github.com/ambarih/migrating.git"
+                        sh """
+                            git clone https://github.com/ambarih/migrating.git
+                        """
+
+                        // Step 8: Navigate to the cloned directory and execute the Python script
+                        echo "Navigating to migrating and executing the Python script ma.py"
+                        sh """
+                            cd migrating
+                            python3 ma.py
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Pipeline completed successfully!"
+        }
+        failure {
+            echo "Pipeline failed!"
+        }
+    }
+}
